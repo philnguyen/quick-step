@@ -52,7 +52,7 @@
 ;; The interpreted language's continuation is that of the meta-language,
 ;; except chunked at function boundaries and allocated in the continuation store
 
-(define-syntax-rule (define-pusher (f fields ...) (⟦k⟧ A σ) e ...)
+(define-syntax-rule (define-kont (f fields ...) (⟦k⟧ A σ) e ...)
   ;; Memoization ensures the same function is returned for the same stack behavior
   (define/memo (f fields ... [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
     (λ (A σ)
@@ -63,7 +63,7 @@
   (λ (A σ)
     (values {set (-r A αₖ)} ⊥σ ⊥σₖ)))
 
-(define-pusher (if∷ [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
+(define-kont (if∷ [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
   (define (t) (⟦e⟧₁ ρ σ ⟦k⟧))
   (define (f) (⟦e⟧₂ ρ σ ⟦k⟧))
   (match V
@@ -71,10 +71,10 @@
     ['N (⊕ (t) (f))]
     [_  (t)]))
 
-(define-pusher (ar∷ [⟦e⟧ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
+(define-kont (ar∷ [⟦e⟧ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
   (⟦e⟧ ρ σ (fn∷ V ⟦k⟧)))
 
-(define-pusher (fn∷ [Vₕ : -V]) (⟦k⟧ Vₓ σ)
+(define-kont (fn∷ [Vₕ : -V]) (⟦k⟧ Vₓ σ)
 
   (: clo-app : Symbol -⟦e⟧ -ρ → (Values (℘ -ς) -Δσ -Δσₖ))
   (define (clo-app x ⟦e⟧ ρ)
@@ -88,7 +88,7 @@
     [(? -o? o)     (⟦k⟧ (δ o Vₓ) σ)]
     [(? -b? b)     (⟦k⟧ (-err (format "apply non-function: ~a" b)) σ)]))
 
-(define-pusher (set!∷ [α : -α]) (⟦k⟧ V σ)
+(define-kont (set!∷ [α : -α]) (⟦k⟧ V σ)
   (define-values (ςs δσ δσₖ) (⟦k⟧ 1 (⊔ σ α V)))
   (values ςs (⊔ δσ α V) δσₖ))
 
