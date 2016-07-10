@@ -13,7 +13,8 @@
 
 (: ↓ : -e → -⟦e⟧)
 ;; Compile expression into computation
-;; that maps current state to store-deltas and set of next configurations 
+;; that maps current state to store-deltas and set of next configurations.
+;; This is essentially a big-step interpreter written in CPS.
 (define ↓
   (match-lambda
     [(and v (or (? -b?) (? -o?)))
@@ -21,7 +22,7 @@
        (⟦k⟧ v σ))]
     [(-x x)
      (λ (ρ σ ⟦k⟧)
-       (for*/ans ([V (in-set (hash-ref σ (hash-ref ρ x)))])
+       (for*/ans ([V (hash-ref σ (hash-ref ρ x))])
          (⟦k⟧ V σ)))]
     [(-λ x e)
      (define ⟦e⟧ (↓ e))
@@ -32,67 +33,64 @@
      (define ⟦e₁⟧ (↓ e₁))
      (define ⟦e₂⟧ (↓ e₂))
      (λ (ρ σ ⟦k⟧)
-       (⟦e⟧ ρ σ (push-if ⟦e₁⟧ ⟦e₂⟧ ρ ⟦k⟧)))]
+       (⟦e⟧ ρ σ (if∷ ⟦e₁⟧ ⟦e₂⟧ ρ ⟦k⟧)))]
     [(-@ e₁ e₂)
      (define ⟦e₁⟧ (↓ e₁))
      (define ⟦e₂⟧ (↓ e₂))
      (λ (ρ σ ⟦k⟧)
-       (⟦e₁⟧ ρ σ (push-ar ⟦e₂⟧ ρ ⟦k⟧)))]
+       (⟦e₁⟧ ρ σ (ar∷ ⟦e₂⟧ ρ ⟦k⟧)))]
     [(-set! x e)
      (define ⟦e⟧ (↓ e))
      (λ (ρ σ ⟦k⟧)
-       (⟦e⟧ ρ σ (push-set! (hash-ref ρ x) ⟦k⟧)))]))
+       (⟦e⟧ ρ σ (set!∷ (hash-ref ρ x) ⟦k⟧)))]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;;; Compile Stack
+;;;;; Compose Continuation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Memoization ensures the same function is returned for the same stack behavior
+
+;; The interpreted language's continuation is that of the meta-language,
+;; except chunked at function boundaries and allocated in the continuation store
+
+(define-syntax-rule (define-pusher (f fields ...) (⟦k⟧ A σ) e ...)
+  ;; Memoization ensures the same function is returned for the same stack behavior
+  (define/memo (f fields ... [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
+    (λ (A σ)
+      (cond [(-err? A) (⟦k⟧ A σ)] ; TODO: faster if has `αₖ`
+            [else e ...]))))
 
 (define/memo (rt [αₖ : -αₖ]) : -⟦k⟧
   (λ (A σ)
     (values {set (-r A αₖ)} ⊥σ ⊥σₖ)))
 
-(define/memo (push-if [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ] [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
-  (λ (A σ)
-    (match A
-      [(? -err? err) (⟦k⟧ err σ)] ; TODO: faster if had `αₖ` here
-      [0             (⟦e⟧₂ ρ σ ⟦k⟧)]
-      ['N            (⊔/ans (⟦e⟧₁ ρ σ ⟦k⟧) (⟦e⟧₂ ρ σ ⟦k⟧))]
-      [_             (⟦e⟧₁ ρ σ ⟦k⟧)])))
+(define-pusher (if∷ [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
+  (define (t) (⟦e⟧₁ ρ σ ⟦k⟧))
+  (define (f) (⟦e⟧₂ ρ σ ⟦k⟧))
+  (match V
+    [0  (f)]
+    ['N (⊕ (t) (f))]
+    [_  (t)]))
 
-(define/memo (push-ar [⟦e⟧ : -⟦e⟧] [ρ : -ρ] [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
-  (λ (A σ)
-    (cond
-      [(-err? A) (⟦k⟧ A σ)] ; TODO: faster if had `αₖ` here
-      [else      (⟦e⟧ ρ σ (push-fn A ⟦k⟧))])))
+(define-pusher (ar∷ [⟦e⟧ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
+  (⟦e⟧ ρ σ (fn∷ V ⟦k⟧)))
 
-(define/memo (push-fn [Vₕ : -V] [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
-  (λ (A σ)
-    (cond
-      [(-err? A) (⟦k⟧ A σ)] ; TODO: faster if had `αₖ` here
-      [else
-       (define Vₓ : -V A)
-       (match Vₕ
-         [(-clo x ⟦e⟧ ρ)
-          (define α (-α x #|0CFA|# #f))
-          (define ρ* (hash-set ρ x α))
-          (define αₖ (-αₖ ⟦e⟧ ρ*))
-          (define δσ  (⊔ ⊥σ  α  Vₓ))
-          (define δσₖ (⊔ ⊥σₖ αₖ ⟦k⟧))
-          (values {set αₖ} δσ δσₖ)]
-         [(? -o? o)
-          (⟦k⟧ (δ o Vₓ) σ)]
-         [(? -b? b)
-          (⟦k⟧ (-err (format "apply non-function: ~a" b)) σ)])])))
+(define-pusher (fn∷ [Vₕ : -V]) (⟦k⟧ Vₓ σ)
 
-(define/memo (push-set! [α : -α] [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
-  (λ (A σ)
-    (cond
-      [(-err? A) (⟦k⟧ A σ)] ; TODO: faster if had `αₖ` here
-      [else
-       (define-values (ςs δσ δσₖ) (⟦k⟧ 1 (⊔ σ α A)))
-       (values ςs (⊔ δσ α A) δσₖ)])))
+  (: clo-app : Symbol -⟦e⟧ -ρ → (Values (℘ -ς) -Δσ -Δσₖ))
+  (define (clo-app x ⟦e⟧ ρ)
+    (define α (-α x #f)) ; 0CFA
+    (define ρ* (hash-set ρ x α))
+    (define αₖ (-αₖ ⟦e⟧ ρ*))
+    (values {set αₖ} (⊔ ⊥σ α Vₓ) (⊔ ⊥σₖ αₖ ⟦k⟧)))
+
+  (match Vₕ
+    [(-clo x ⟦e⟧ ρ) (clo-app x ⟦e⟧ ρ)]
+    [(? -o? o)     (⟦k⟧ (δ o Vₓ) σ)]
+    [(? -b? b)     (⟦k⟧ (-err (format "apply non-function: ~a" b)) σ)]))
+
+(define-pusher (set!∷ [α : -α]) (⟦k⟧ V σ)
+  (define-values (ςs δσ δσₖ) (⟦k⟧ 1 (⊔ σ α V)))
+  (values ςs (⊔ δσ α V) δσₖ))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -69,13 +69,13 @@
             (⊔/m δσ  δσ* )
             (⊔/m δσₖ δσₖ*))))
 
-(define-syntax ⊔/ans
+(define-syntax ⊕
   (syntax-rules ()
     [(_) (values ∅ ⊥σ ⊥σₖ)]
     [(_ e) e]
     [(_ e e* ...)
      (let-values ([(ςs  δσ  δσₖ ) (let () e)]
-                  [(ςs* δσ* δσₖ*) (⊔/ans e* ...)])
+                  [(ςs* δσ* δσₖ*) (⊕ e* ...)])
        (values (∪   ςs  ςs* )
                (⊔/m δσ  δσ* )
                (⊔/m δσₖ δσₖ*)))]))
