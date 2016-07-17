@@ -6,6 +6,31 @@
          racket/set
          racket/match)
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Utils
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(struct (X Y) VMap ([m : (HashTable X (℘ Y))] [version : Integer]) #:transparent #:mutable)
+
+(: ⊥vm (∀ (X Y) → (VMap X Y)))
+(define (⊥vm) (VMap ((inst make-hash X (℘ Y))) 0))
+
+(: vm⊔! (∀ (X Y) (VMap X Y) X Y → Integer))
+(define (vm⊔! vm x y)
+  (match-define (VMap m i) vm)
+  (cond
+    [(∋ (hash-ref m x →∅) y) i]
+    [else
+     (hash-update! m x (λ ([ys : (℘ Y)]) (set-add ys y)) →∅)
+     (define i* (+ 1 i))
+     (set-VMap-version! vm i*)
+     i*]))
+
+(: vm@ (∀ (X Y) (VMap X Y) X → (℘ Y)))
+(define (vm@ vm x) (hash-ref (VMap-m vm) x →∅))
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Syntax
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -35,50 +60,36 @@
 
 #|Value Address|# (struct -α  ([var : Symbol] [ctx : Any]) #:transparent)
 #|Stack Address|# (struct -αₖ ([exp : -⟦e⟧] [env : -ρ]) #:transparent)
-#|Environment  |# (-ρ   . ::= . (HashTable Symbol -α))
-#|Value Store  |# (-σ   . ::= . (HashTable -α (℘ -V)))
-                  (-Δσ  . ::= . -σ)
-#|Stack Store  |# (-σₖ  . ::= . (HashTable -αₖ (℘ -⟦k⟧)))
-                  (-Δσₖ . ::= . -σₖ)
+#|Environment  |# (-ρ . ::= . (HashTable Symbol -α))
+#|Value Store  |# (define-type -σ  (VMap -α  -V))
+#|Stack Store  |# (define-type -σₖ (VMap -αₖ -⟦k⟧))
 #|Configuration|# (-ς . ::= . #|function begin |# -αₖ
                               #|function return|# (struct -r [ans : -A] [target : -αₖ]))
 
 ;; Stacks are not first-class, so computation doesn't care about stack-store for now
-#|Compiled expression  |# (-⟦e⟧ . ::= . (-ρ -σ -⟦k⟧ → (Values (℘ -ς) -Δσ -Δσₖ)))
-#|Compiled continuation|# (-⟦k⟧ . ::= . (-A -σ     → (Values (℘ -ς) -Δσ -Δσₖ)))
+#|Compiled expression  |# (-⟦e⟧ . ::= . (-ρ -σ -σₖ -⟦k⟧ → (℘ -ς)))
+#|Compiled continuation|# (-⟦k⟧ . ::= . (-A -σ -σₖ     → (℘ -ς)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;; Constants
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define ⊥ρ  : -ρ  (hasheq))
-(define ⊥σ  : -σ  (hash))
-(define ⊥σₖ : -σₖ (hash))
+(define ⊥ρ : -ρ (hasheq))
 
 (define-predicate -o? -o)
 (define-predicate -b? -b)
 
 (define-syntax-rule (for*/ans (clauses ...) e ...)
-  (for*/fold ([ςs  : (℘ -ς) ∅ ]
-              [δσ  : -Δσ    ⊥σ ]
-              [δσₖ : -Δσₖ   ⊥σₖ])
-             (clauses ...)
-    (define-values (ςs* δσ* δσₖ*) (let () e ...))
-    (values (∪   ςs  ςs* )
-            (⊔/m δσ  δσ* )
-            (⊔/m δσₖ δσₖ*))))
+  (for*/fold ([acc : (℘ -ς) ∅]) (clauses ...)
+    (∪ acc (let () e ...))))
 
-(define-syntax ⊕
-  (syntax-rules ()
-    [(_) (values ∅ ⊥σ ⊥σₖ)]
-    [(_ e) e]
-    [(_ e e* ...)
-     (let-values ([(ςs  δσ  δσₖ ) (let () e)]
-                  [(ςs* δσ* δσₖ*) (⊕ e* ...)])
-       (values (∪   ςs  ςs* )
-               (⊔/m δσ  δσ* )
-               (⊔/m δσₖ δσₖ*)))]))
+(define ⊕ ∪)
+(define σ⊔!  (inst vm⊔! -α  -V))
+(define σₖ⊔! (inst vm⊔! -αₖ -⟦k⟧))
+
+(define σ@  (inst vm@ -α  -V))
+(define σₖ@ (inst vm@ -αₖ -⟦k⟧))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

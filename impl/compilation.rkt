@@ -18,31 +18,31 @@
 (define ↓
   (match-lambda
     [(and v (or (? -b?) (? -o?)))
-     (λ (ρ σ ⟦k⟧)
-       (⟦k⟧ v σ))]
+     (λ (ρ σ σₖ ⟦k⟧)
+       (⟦k⟧ v σ σₖ))]
     [(-x x)
-     (λ (ρ σ ⟦k⟧)
-       (for*/ans ([V (hash-ref σ (hash-ref ρ x))])
-         (⟦k⟧ V σ)))]
+     (λ (ρ σ σₖ ⟦k⟧)
+       (for*/ans ([V (σ@ σ (hash-ref ρ x))])
+         (⟦k⟧ V σ σₖ)))]
     [(-λ x e)
      (define ⟦e⟧ (↓ e))
-     (λ (ρ σ ⟦k⟧)
-       (⟦k⟧ (-clo x ⟦e⟧ ρ) σ))]
+     (λ (ρ σ σₖ ⟦k⟧)
+       (⟦k⟧ (-clo x ⟦e⟧ ρ) σ σₖ))]
     [(-if e e₁ e₂)
      (define ⟦e⟧  (↓ e ))
      (define ⟦e₁⟧ (↓ e₁))
      (define ⟦e₂⟧ (↓ e₂))
-     (λ (ρ σ ⟦k⟧)
-       (⟦e⟧ ρ σ (if∷ ⟦e₁⟧ ⟦e₂⟧ ρ ⟦k⟧)))]
+     (λ (ρ σ σₖ ⟦k⟧)
+       (⟦e⟧ ρ σ σₖ (if∷ ⟦e₁⟧ ⟦e₂⟧ ρ ⟦k⟧)))]
     [(-@ e₁ e₂)
      (define ⟦e₁⟧ (↓ e₁))
      (define ⟦e₂⟧ (↓ e₂))
-     (λ (ρ σ ⟦k⟧)
-       (⟦e₁⟧ ρ σ (ar∷ ⟦e₂⟧ ρ ⟦k⟧)))]
+     (λ (ρ σ σₖ ⟦k⟧)
+       (⟦e₁⟧ ρ σ σₖ (ar∷ ⟦e₂⟧ ρ ⟦k⟧)))]
     [(-set! x e)
      (define ⟦e⟧ (↓ e))
-     (λ (ρ σ ⟦k⟧)
-       (⟦e⟧ ρ σ (set!∷ (hash-ref ρ x) ⟦k⟧)))]))
+     (λ (ρ σ σₖ ⟦k⟧)
+       (⟦e⟧ ρ σ σₖ (set!∷ (hash-ref ρ x) ⟦k⟧)))]))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -52,45 +52,46 @@
 ;; The interpreted language's continuation is that of the meta-language,
 ;; except chunked at function boundaries and allocated in the continuation store
 
-(define-syntax-rule (define-kont (f fields ...) (⟦k⟧ A σ) e ...)
+(define-syntax-rule (define-kont (f fields ...) (⟦k⟧ A σ σₖ) e ...)
   ;; Memoization ensures the same function is returned for the same stack behavior
   (define/memo (f fields ... [⟦k⟧ : -⟦k⟧]) : -⟦k⟧
-    (λ (A σ)
-      (cond [(-err? A) (⟦k⟧ A σ)] ; TODO: faster if has `αₖ`
+    (λ (A σ σₖ)
+      (cond [(-err? A) (⟦k⟧ A σ σₖ)] ; TODO: faster if has `αₖ`
             [else e ...]))))
 
 (define/memo (rt [αₖ : -αₖ]) : -⟦k⟧
-  (λ (A σ)
-    (values {set (-r A αₖ)} ⊥σ ⊥σₖ)))
+  (λ (A σ σₖ) {set (-r A αₖ)}))
 
-(define-kont (if∷ [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
-  (define (t) (⟦e⟧₁ ρ σ ⟦k⟧))
-  (define (f) (⟦e⟧₂ ρ σ ⟦k⟧))
+(define-kont (if∷ [⟦e⟧₁ : -⟦e⟧] [⟦e⟧₂ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ σₖ)
+  (define (t) (⟦e⟧₁ ρ σ σₖ ⟦k⟧))
+  (define (f) (⟦e⟧₂ ρ σ σₖ ⟦k⟧))
   (match V
     [0  (f)]
     ['N (⊕ (t) (f))]
     [_  (t)]))
 
-(define-kont (ar∷ [⟦e⟧ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ)
-  (⟦e⟧ ρ σ (fn∷ V ⟦k⟧)))
+(define-kont (ar∷ [⟦e⟧ : -⟦e⟧] [ρ : -ρ]) (⟦k⟧ V σ σₖ)
+  (⟦e⟧ ρ σ σₖ (fn∷ V ⟦k⟧)))
 
-(define-kont (fn∷ [Vₕ : -V]) (⟦k⟧ Vₓ σ)
+(define-kont (fn∷ [Vₕ : -V]) (⟦k⟧ Vₓ σ σₖ)
 
-  (: clo-app : Symbol -⟦e⟧ -ρ → (Values (℘ -ς) -Δσ -Δσₖ))
+  (: clo-app : Symbol -⟦e⟧ -ρ → (℘ -ς))
   (define (clo-app x ⟦e⟧ ρ)
     (define α (-α x #f)) ; 0CFA
     (define ρ* (hash-set ρ x α))
     (define αₖ (-αₖ ⟦e⟧ ρ*))
-    (values {set αₖ} (⊔ ⊥σ α Vₓ) (⊔ ⊥σₖ αₖ ⟦k⟧)))
+    (σ⊔!  σ  α  Vₓ)
+    (σₖ⊔! σₖ αₖ ⟦k⟧)
+    {set αₖ})
 
   (match Vₕ
     [(-clo x ⟦e⟧ ρ) (clo-app x ⟦e⟧ ρ)]
-    [(? -o? o)     (⟦k⟧ (δ o Vₓ) σ)]
-    [(? -b? b)     (⟦k⟧ (-err (format "apply non-function: ~a" b)) σ)]))
+    [(? -o? o)     (⟦k⟧ (δ o Vₓ) σ σₖ)]
+    [(? -b? b)     (⟦k⟧ (-err (format "apply non-function: ~a" b)) σ σₖ)]))
 
-(define-kont (set!∷ [α : -α]) (⟦k⟧ V σ)
-  (define-values (ςs δσ δσₖ) (⟦k⟧ 1 (⊔ σ α V)))
-  (values ςs (⊔ δσ α V) δσₖ))
+(define-kont (set!∷ [α : -α]) (⟦k⟧ V σ σₖ)
+  (σ⊔! σ α V)
+  (⟦k⟧ 1 σ σₖ))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
