@@ -14,7 +14,7 @@
   
   (define seen : (HashTable -ς (Pairof Integer Integer)) (make-hash))
   (define-set ans : -A)
-  (define σ  : -σ  (⊥vm))
+  (define σ  : -σ  (⊥vm #:eq? #t))
   (define σₖ : -σₖ (⊥vm))
   
   (let loop! ([front : (℘ -ς) {set αₖ}])

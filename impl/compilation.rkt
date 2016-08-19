@@ -77,7 +77,7 @@
 
   (: clo-app : Symbol -⟦e⟧ -ρ → (℘ -ς))
   (define (clo-app x ⟦e⟧ ρ)
-    (define α (-α x #f)) ; 0CFA
+    (define α (+α x #f)) ; 0CFA
     (define ρ* (hash-set ρ x α))
     (define αₖ (-αₖ ⟦e⟧ ρ*))
     (σ⊔!  σ  α  Vₓ)

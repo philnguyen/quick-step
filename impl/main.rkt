@@ -68,7 +68,7 @@
              ((λ (z) (@* z x1 x2 x3))
               (λ* (y1 y2 y3) y1))))))))))
 
-#;(define e.pair
+(define e.pair
   (parse
    '(let* ([cons (λ* (x y msg) (if msg x y))]
            [car (λ (p) (p 1))]

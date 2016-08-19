@@ -13,8 +13,11 @@
 
 (struct (X Y) VMap ([m : (HashTable X (℘ Y))] [version : Integer]) #:transparent #:mutable)
 
-(: ⊥vm (∀ (X Y) → (VMap X Y)))
-(define (⊥vm) (VMap ((inst make-hash X (℘ Y))) 0))
+(: ⊥vm (∀ (X Y) ([] [#:eq? Boolean] . ->* .(VMap X Y))))
+(define (⊥vm #:eq? [use-eq? #f])
+  (if use-eq?
+      (VMap ((inst make-hasheq X (℘ Y))) 0)
+      (VMap ((inst make-hash   X (℘ Y))) 0)))
 
 (: vm⊔! (∀ (X Y) (VMap X Y) X Y → Integer))
 (define (vm⊔! vm x y)
@@ -58,7 +61,7 @@
                        -b
                        (struct -clo [var : Symbol] [body : -⟦e⟧] [env : -ρ]))
 
-#|Value Address|# (struct -α  ([var : Symbol] [ctx : Any]) #:transparent)
+#|Value Address|# (define-new-subtype -α (integer->α Integer))
 #|Stack Address|# (struct -αₖ ([exp : -⟦e⟧] [env : -ρ]) #:transparent)
 #|Environment  |# (-ρ . ::= . (HashTable Symbol -α))
 #|Value Store  |# (define-type -σ  (VMap -α  -V))
@@ -90,6 +93,11 @@
 
 (define σ@  (inst vm@ -α  -V))
 (define σₖ@ (inst vm@ -αₖ -⟦k⟧))
+
+(define +α
+  (let ([m : (HashTable (Pairof Symbol Any) -α) (make-hash)])
+    (λ ([var : Symbol] [ctx : Any])
+      (hash-ref! m (cons var ctx) (λ () (integer->α (hash-count m)))))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
